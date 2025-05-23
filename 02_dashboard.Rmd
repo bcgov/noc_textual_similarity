@@ -1,0 +1,153 @@
+---
+title: "Using text mining to quantify NOC similarity."
+output:
+  flexdashboard::flex_dashboard:
+    orientation: rows
+runtime: shiny
+resource_files:
+- out/similarity.rds
+- out/tf_idf.rds
+---
+
+```{r}
+library(tidyverse)
+library(here)
+library(plotly)
+#load the rds files in the out subdirectory
+
+similarity <- read_rds(here("out", "similarity.rds"))
+tf_idf <- read_rds(here("out", "tf_idf.rds"))
+nocs <- unique(similarity$noc1)
+descriptions <- unique(similarity$description1)
+```
+
+## Inputs {.sidebar}
+
+```{r}
+selectInput("desc", "Select a NOC: ", choices = descriptions, selected = "Drillers and blasters - surface mining, quarrying and construction")
+
+#reactive elements
+
+reactive_similarity <- reactive({
+   similarity|>
+    filter(description1 == input$desc) |>
+    slice_max(similarity, n = 10)|>
+    mutate(links = paste0("https://noc.esdc.gc.ca/Structure/NOCProfile?GocTemplateCulture=en-CA&code=", noc2, "&version=2021.0"),
+           links = paste0('<a href="', links, '" target="_blank">', description2, '</a>'),
+           link = paste0("https://noc.esdc.gc.ca/Structure/NOCProfile?GocTemplateCulture=en-CA&code=", noc1, "&version=2021.0")
+           )
+})
+
+output$dynamic_title <- renderUI({
+  tags$h3(
+    tags$a(href = reactive_similarity()$link[1], target = "_blank", reactive_similarity()$description1[1])
+  )
+})
+```
+
+-   Top panel shows the 10 closest NOCs to the selected NOC in terms of the language used to describe the job title, exclusions and main duties.
+-   Note that the [light blue](https://noc.esdc.gc.ca/) NOC descriptions in the title and on the y axis are hyperlinks to noc.esdc.gc.ca.
+-   Bottom left panel shows the most common terms in the selected NOC. Note that words like "and", "the", "of" are common but not informative.
+-   Bottom middle panel shows the terms that are rare in other NOCs text.
+-   Bottom right panel shows the terms that distinguish the NOC: terms that are common in this NOC, but rare in others.
+
+## Row
+
+### `r uiOutput("dynamic_title")`
+
+```{r, fig.retina=2}
+renderPlotly({
+  reactive_similarity()|>
+    plot_ly(
+      x = ~similarity,
+      y = ~description2,
+      type = 'bar',
+      orientation = 'h',
+      hoverinfo = 'none'
+      )%>%
+    plotly::layout(
+      margin = list(t = 50),
+      title = list(
+      text = paste0("Top 10 similar NOCs"),
+      font = list(size = 20)
+      ),
+      xaxis = list(title = "Cosine Similarity"),
+      yaxis = list(
+      title = "",
+      tickvals = reactive_similarity()$description2,
+      ticktext = reactive_similarity()$links,
+      tickmode = "array"
+      ),
+      margin = list(l = 150)
+      )
+})
+
+```
+
+## Row
+
+### Term Frequency: most common terms
+
+```{r, fig.retina=2}
+renderPlotly({
+  tf_idf |>
+    filter(description == input$desc) |>
+    slice_max(tf, n = 10) |>
+    mutate(word = fct_reorder(word, tf, .desc = TRUE)) |>
+    plot_ly(
+  x = ~tf,
+  y = ~word,
+  type = 'bar',
+  orientation = 'h',
+  hoverinfo = 'none'
+)%>%
+  plotly::layout(
+    xaxis = list(title = ""),
+    yaxis = list(title = "")
+  )
+})
+```
+
+### Inverse Document Frequency: terms that are most rare for other NOCS
+
+```{r, fig.retina=2}
+renderPlotly({
+  tf_idf |>
+    filter(description == input$desc) |>
+    slice_max(idf, n = 10) |>
+    mutate(word = fct_reorder(word, idf, .desc = TRUE)) |>
+    plot_ly(
+  x = ~idf,
+  y = ~word,
+  type = 'bar',
+  orientation = 'h',
+  hoverinfo = 'none'
+)%>%
+  plotly::layout(
+    xaxis = list(title = ""),
+    yaxis = list(title = "")
+  )
+})
+```
+
+### TF\*IDF: the defining terms
+
+```{r, fig.retina=2}
+renderPlotly({
+  tf_idf |>
+    filter(description == input$desc) |>
+    slice_max(tf_idf, n = 10) |>
+    mutate(word = fct_reorder(word, tf_idf, .desc = TRUE)) |>
+    plot_ly(
+  x = ~tf_idf,
+  y = ~word,
+  type = 'bar',
+  orientation = 'h',
+  hoverinfo = 'none'
+)%>%
+  plotly::layout(
+    xaxis = list(title = ""),
+    yaxis = list(title = "")
+  )
+})
+```
