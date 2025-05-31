@@ -1,27 +1,91 @@
 ---
-title: "Using text mining to quantify NOC similarity."
+title: "NOC language similarity vs. skill distances"
 output:
   flexdashboard::flex_dashboard:
-    orientation: rows
 runtime: shiny
 resource_files:
 - out/similarity.rds
 - out/tf_idf.rds
+- out/dist_and_sim.rds
 ---
 
 ```{r}
 library(tidyverse)
 library(here)
 library(plotly)
-#load the rds files in the out subdirectory
+#functions-------------------------------
+compute_pca_projection <- function(df) {
+  stopifnot(
+    is.data.frame(df),
+    all(c("distance", "similarity") %in% names(df)),
+    is.numeric(df$distance),
+    is.numeric(df$similarity)
+  )
 
+  X <- df[, c("distance", "similarity")]
+  pca <- prcomp(X, center = TRUE, scale. = TRUE)
+  v1 <- pca$rotation[, 1]
+  center <- colMeans(X)
+
+  X_centered <- sweep(as.matrix(X), 2, center)
+  proj_scalar <- as.vector(X_centered %*% v1)
+  proj_coords <- proj_scalar %*% t(v1)
+  proj_coords_full <- sweep(proj_coords, 2, center, "+")
+
+  df_out <- cbind(df,
+                  pca_index = proj_scalar,
+                  x_proj = proj_coords_full[, 1],
+                  y_proj = proj_coords_full[, 2])
+
+  idx <- df_out$pca_index
+  if (cor(df_out$similarity, idx) < 0 || cor(df_out$distance, idx) > 0) {idx <- -idx}
+  df_out$pca_index <- idx
+  
+  list(
+    data = df_out,
+    pc1 = v1,
+    center = center
+  )
+}
+
+plot_pca_projections <- function(pca_result) {
+  df <- pca_result$data
+  v1 <- pca_result$pc1
+  center <- pca_result$center
+
+  plt <- ggplot(df, aes(x = distance,
+                        y = similarity,
+                        text = paste0("NOC: ",
+                                      description2,
+                                      "\n Index value: ",
+                                      round(pca_index,2)))) +
+    geom_point(alpha=.5) +
+    geom_segment(aes(xend = x_proj, yend = y_proj), alpha = 0.1) +
+    geom_point(aes(x = x_proj, y = y_proj), alpha=.5, colour="red") +
+    coord_fixed() +
+    theme_minimal() +
+    labs(title = "PCA: Orthogonal Projections onto First Component",
+         x = "Scaled Distance",
+         y = "Scaled Similarity")
+
+  ggplotly(plt, tooltip = "text")
+}
+
+
+#load the rds files in the out subdirectory
 similarity <- read_rds(here("out", "similarity.rds"))
 tf_idf <- read_rds(here("out", "tf_idf.rds"))
+dist_and_sim <- read_rds(here("out", "dist_and_sim.rds"))
 nocs <- unique(similarity$noc1)
 descriptions <- unique(similarity$description1)
 ```
 
-## Inputs {.sidebar}
+
+Language Similarity {data-orientation=rows}
+=====================================  
+
+Inputs {.sidebar}
+-------------------------------------
 
 ```{r}
 selectInput("desc", "Select a NOC: ", choices = descriptions, selected = "Drillers and blasters - surface mining, quarrying and construction")
@@ -45,11 +109,13 @@ output$dynamic_title <- renderUI({
 })
 ```
 
--   Top panel shows the 10 closest NOCs to the selected NOC in terms of the language used to describe the job title, exclusions and main duties.
--   Note that the [light blue](https://noc.esdc.gc.ca/) NOC descriptions in the title and on the y axis are hyperlinks to noc.esdc.gc.ca.
--   Bottom left panel shows the most common terms in the selected NOC. Note that words like "and", "the", "of" are common but not informative.
+### Language Similarity 
+
+-   Top panel shows the 10 closest NOCs to the selected NOC based on language similarity.
+-   Note that the [light blue](https://noc.esdc.gc.ca/) NOC descriptions are hyperlinks.
+-   Bottom left panel shows the most common terms in the selected NOC.
 -   Bottom middle panel shows the terms that are rare in other NOCs text.
--   Bottom right panel shows the terms that distinguish the NOC: terms that are common in this NOC, but rare in others.
+-   Bottom right panel shows the defining terms: terms that are common in this NOC, but rare in others.
 
 ## Row
 
@@ -151,3 +217,67 @@ renderPlotly({
   )
 })
 ```
+
+Language Similarity vs Skills Distance  {data-orientation=columns}
+==============================================
+
+
+Inputs {.sidebar}
+-------------------------------------
+
+### Language Similarity vs Skills Distance
+
+-  ONET skills, knowledge, abilities and work activities scores can be used to 
+measure distance between NOCs.
+-  Here we create an index of similarity based both on language similarity and proximity in terms of skills, knowledge, abilities, and work activities.
+- The index is computed as a projection onto the first principal component of the PCA of the distance and similarity scores. (the red dots)
+- Top left: similar NOCs
+- Bottom right: the most different NOCs.
+- Points below the diagonal are more similar in skills, but less similar in language.
+- Points above the diagonal are more similar in language, but less similar in skills.
+
+```{r}
+#reactive elements------------
+pca_result <- reactive({
+  dist_and_sim |>
+    filter(description1 == input$desc) |>
+    compute_pca_projection()
+})
+
+most_similar <- reactive({
+  pca_result()$data|>
+    slice_max(pca_index, n = 10)
+})
+```
+
+
+
+## Column {data-width=650}
+
+###
+
+```{r}
+renderPlotly({
+  plot_pca_projections(pca_result()) 
+})
+```
+
+## Column
+
+###
+
+```{r}
+renderPlot({
+ most_similar() |>
+  ggplot(aes(x=pca_index, y=fct_reorder(description2, pca_index))) +
+    geom_col(alpha=.5)+
+    theme_minimal()+
+    labs(title = "Top 10 NOCs by PCA Index",
+         x = "PCA Index",
+         y = "")
+})
+```
+
+
+
+
