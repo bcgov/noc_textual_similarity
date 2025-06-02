@@ -110,7 +110,6 @@ tbbl <- tibble(file=c("Skills.xlsx", "Abilities.xlsx", "Knowledge.xlsx", "Work A
 pca <- prcomp(tbbl, center = TRUE, scale. = TRUE)
 
 #screeplot for pca-------------------
-screeplot(pca, type = "barplot", main = "Scree Plot")
 factoextra::get_eig(pca)
 #keep only the first 5 components of pca---------------------
 
