@@ -81,6 +81,85 @@ descriptions <- unique(similarity$description1)
 ```
 
 
+Language Similarity vs Skills Distance  {data-orientation=columns}
+==============================================
+
+
+Inputs {.sidebar}
+-------------------------------------
+
+```{r}
+renderUI({
+selected_val <- if (!is.null(input$desc)) input$desc else "Economists and economic policy researchers and analysts"    
+selectInput("desc", "Select a NOC: ", choices = descriptions, selected = selected_val)
+})  
+```
+
+
+
+### Language Similarity vs Skills Distance
+
+-  ONET skills, knowledge, abilities and work activities scores can be used to 
+measure distance between NOCs.
+-  Here we create an index of similarity based both on language similarity and proximity in terms of skills, knowledge, abilities, and work activities.
+- The index is computed as a projection onto the first principal component of the PCA of the distance and similarity scores. (the red dots)
+- Top left: similar NOCs
+- Bottom right: the most different NOCs.
+- Points below the diagonal are more similar in skills, but less similar in language.
+- Points above the diagonal are more similar in language, but less similar in skills.
+
+```{r}
+#reactive elements------------
+pca_result <- reactive({
+  req(input$desc)
+  dist_and_sim |>
+    filter(description1 == input$desc) |>
+    compute_pca_projection()
+})
+
+most_similar <- reactive({
+  req(pca_result())
+  pca_result()$data|>
+    slice_max(pca_index, n = 10)
+})
+```
+
+
+
+## Column {data-width=650}
+
+###
+
+```{r}
+renderPlotly({
+  plot_pca_projections(pca_result()) 
+})
+```
+
+## Column
+
+###
+
+```{r}
+renderPlot({
+ most_similar() |>
+  ggplot(aes(x=pca_index, y=fct_reorder(description2, pca_index))) +
+    geom_col(alpha=.5)+
+    theme_minimal()+
+    labs(title = "Top 10 NOCs by PCA Index",
+         x = "PCA Index",
+         y = "")
+})
+```
+
+
+
+
+
+
+
+
+
 Language Similarity {data-orientation=rows}
 =====================================  
 
@@ -88,11 +167,15 @@ Inputs {.sidebar}
 -------------------------------------
 
 ```{r}
-selectInput("desc", "Select a NOC: ", choices = descriptions, selected = "Drillers and blasters - surface mining, quarrying and construction")
 
+renderUI({
+selected_val <- if (!is.null(input$desc)) input$desc else "Economists and economic policy researchers and analysts"  
+selectInput("desc", "Select a NOC: ", choices = descriptions, selected = selected_val)
+})
 #reactive elements
 
 reactive_similarity <- reactive({
+  req(input$desc)
    similarity|>
     filter(description1 == input$desc) |>
     slice_max(similarity, n = 10)|>
@@ -156,6 +239,7 @@ renderPlotly({
 
 ```{r, fig.retina=2}
 renderPlotly({
+  req(input$desc)
   tf_idf |>
     filter(description == input$desc) |>
     slice_max(tf, n = 10) |>
@@ -178,6 +262,7 @@ renderPlotly({
 
 ```{r, fig.retina=2}
 renderPlotly({
+  req(input$desc)
   tf_idf |>
     filter(description == input$desc) |>
     slice_max(idf, n = 10) |>
@@ -200,6 +285,7 @@ renderPlotly({
 
 ```{r, fig.retina=2}
 renderPlotly({
+  req(input$desc)
   tf_idf |>
     filter(description == input$desc) |>
     slice_max(tf_idf, n = 10) |>
@@ -215,66 +301,6 @@ renderPlotly({
     xaxis = list(title = ""),
     yaxis = list(title = "")
   )
-})
-```
-
-Language Similarity vs Skills Distance  {data-orientation=columns}
-==============================================
-
-
-Inputs {.sidebar}
--------------------------------------
-
-### Language Similarity vs Skills Distance
-
--  ONET skills, knowledge, abilities and work activities scores can be used to 
-measure distance between NOCs.
--  Here we create an index of similarity based both on language similarity and proximity in terms of skills, knowledge, abilities, and work activities.
-- The index is computed as a projection onto the first principal component of the PCA of the distance and similarity scores. (the red dots)
-- Top left: similar NOCs
-- Bottom right: the most different NOCs.
-- Points below the diagonal are more similar in skills, but less similar in language.
-- Points above the diagonal are more similar in language, but less similar in skills.
-
-```{r}
-#reactive elements------------
-pca_result <- reactive({
-  dist_and_sim |>
-    filter(description1 == input$desc) |>
-    compute_pca_projection()
-})
-
-most_similar <- reactive({
-  pca_result()$data|>
-    slice_max(pca_index, n = 10)
-})
-```
-
-
-
-## Column {data-width=650}
-
-###
-
-```{r}
-renderPlotly({
-  plot_pca_projections(pca_result()) 
-})
-```
-
-## Column
-
-###
-
-```{r}
-renderPlot({
- most_similar() |>
-  ggplot(aes(x=pca_index, y=fct_reorder(description2, pca_index))) +
-    geom_col(alpha=.5)+
-    theme_minimal()+
-    labs(title = "Top 10 NOCs by PCA Index",
-         x = "PCA Index",
-         y = "")
 })
 ```
 
